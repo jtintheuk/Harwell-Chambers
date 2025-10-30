@@ -1,37 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { initializeApp } from "firebase/app";
+import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
   signInAnonymously, 
-  onAuthStateChanged 
-} from "firebase/auth";
+  onAuthStateChanged,
+  signInWithCustomToken // Added for preview auth
+} from 'firebase/auth';
 import { 
   getFirestore, 
   doc, 
-  getDoc, 
   addDoc, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc, 
-  onSnapshot, 
   collection, 
   query, 
   where, 
-  getDocs,
-  setLogLevel
-} from "firebase/firestore";
-
-// --- Permanent Firebase Config ---
-// ========================================================================
-const firebaseConfig = {
-  apiKey: "AIzaSyA7soD0H7TRwuAn8R6S9MHodE6VPGpRhFI",
-  authDomain: "harwell-chamber-monitoring.firebaseapp.com",
-  projectId: "harwell-chamber-monitoring",
-  storageBucket: "harwell-chamber-monitoring.firebasestorage.app",
-  messagingSenderId: "620112704693",
-  appId: "1:620112704693:web:f6795325bef01773f33afc"
-};
-// ========================================================================
+  getDocs
+} from 'firebase/firestore';
 
 // --- Helper Functions ---
 
@@ -105,12 +88,32 @@ function formatReportForEmail(reportData) {
   return body;
 }
 
+// --- Firebase Config ---
+// Use preview config if available, otherwise fall back to production config
+const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config
+  ? JSON.parse(__firebase_config) 
+  : {
+      apiKey: "AIzaSyA7bQNTmraeaAnB8S9MWobDEVjPgRihFI",
+      authDomain: "harwell-chamber-monitoring.firebaseapp.com",
+      projectId: "harwell-chamber-monitoring",
+      storageBucket: "harwell-chamber-monitoring.appspot.com",
+      messagingSenderId: "620112704693",
+      appId: "1:620112704693:web:f6795328bef8177f33f0fc"
+    };
+// ========================================================================
+
+// Check if we are in the preview environment
+const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+// Sanitize the appId to remove any potential slashes from filename injection
+const appId = rawAppId.split('/')[0];
+
+
 // --- Initial Data ---
 
 const INITIAL_MACHINES = [
   {
     id: 1,
-    name: "Vallet 1",
+    name: "Valley 1",
     currentJobs: [], // Array of { jobId, wrNumber, jobName, crateCount }
     status: "Idle", // "Idle", "Running", "Down"
     startTime: null,
@@ -132,7 +135,7 @@ const INITIAL_MACHINES = [
   },
   {
     id: 3,
-    name: "Vallet 2",
+    name: "Valley 2",
     currentJobs: [],
     status: "Idle",
     startTime: null,
@@ -241,7 +244,6 @@ function AddJobModal({ onSubmit, onClose }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (crateCount < 0) {
-      // Simple validation, though the 'min' attribute helps
       return; 
     }
     onSubmit({
@@ -324,26 +326,50 @@ function AddJobModal({ onSubmit, onClose }) {
  * Component for adding a downtime description
  */
 function DowntimeModal({ onSubmit, onClose }) {
-  const [description, setDescription] = useState("");
+  const [reason, setReason] = useState("Break down"); // Default reason
+  const [notes, setNotes] = useState("");
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSubmit(description || "No description provided.");
+    const fullDescription = `${reason}: ${notes || "No additional notes."}`;
+    onSubmit(fullDescription);
   };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
       <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full text-gray-900">
         <h3 className="text-2xl font-bold text-center mb-6">Report Downtime</h3>
-        <p className="text-center mb-4">
-          Please enter a reason for the machine downtime.
-        </p>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          className="w-full h-24 p-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="e.g., Tool change, material jam, maintenance..."
-        />
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Downtime Reason
+            </label>
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="Break down">Break down</option>
+              <option value="Scheduled Maintenance">Scheduled Maintenance</option>
+              <option value="Checking work">Checking work</option>
+              <option value="Other">Other (see notes)</option>
+            </select>
+          </div>
+        
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Additional Notes
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full h-24 p-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Add any extra details here..."
+            />
+          </div>
+        </div>
+
         <div className="flex justify-around mt-8">
           <button
             type="submit"
@@ -371,11 +397,9 @@ function DowntimeModal({ onSubmit, onClose }) {
 function ReportModal({ reportData, onClose }) {
   if (!reportData) return null;
 
-  // --- New code for mailto link ---
   const emailSubject = `Job Report: ${reportData.job.jobName} (WR: ${reportData.job.wrNumber})`;
   const emailBody = formatReportForEmail(reportData);
   const mailtoLink = `mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
-  // --- End of new code ---
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
@@ -453,7 +477,6 @@ function ReportModal({ reportData, onClose }) {
           >
             Close Report
           </button>
-          {/* --- New Email Button --- */}
           <a
             href={mailtoLink}
             target="_blank"
@@ -462,7 +485,6 @@ function ReportModal({ reportData, onClose }) {
           >
             Email Report
           </a>
-          {/* --- End of New Email Button --- */}
         </div>
       </div>
     </div>
@@ -478,7 +500,6 @@ function SearchModal({ onClose, onSearch, onViewReport, results, isSearching, er
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Use onSearch for all logic, including blank search
     onSearch(searchType, searchValue.trim());
   };
   
@@ -587,16 +608,13 @@ function RunningTimer({ startTime }) {
 function MachineCard({ machine, onUpdate, onCompleteJobRequest, onDowntimeRequest, onAddJobRequest, onStartMachine }) {
   
   const handleAddJob = () => {
-    // Triggers the modal to open
     onAddJobRequest(machine.id);
   };
   
   const handleDowntimeToggle = () => {
     if (machine.status === "Running") {
-      // Starting downtime - triggers modal
       onDowntimeRequest(machine.id);
     } else if (machine.status === "Down") {
-      // Ending downtime
       const newLogEntry = {
         downAt: machine.currentDowntimeStart,
         upAt: new Date().toISOString(),
@@ -714,8 +732,6 @@ function MachineCard({ machine, onUpdate, onCompleteJobRequest, onDowntimeReques
           </button>
         )}
 
-        {/* Complete Button is removed from here */}
-
       </div>
     </div>
   );
@@ -737,9 +753,6 @@ export default function App() {
   const [userId, setUserId] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   
-  // --- Check for valid config ---
-  const [isConfigValid, setIsConfigValid] = useState(firebaseConfig.apiKey !== "YOUR_API_KEY_HERE");
-  
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
@@ -748,42 +761,45 @@ export default function App() {
 
   // --- Firebase Initialization Effect ---
   useEffect(() => {
-    // Only initialize if the config is valid
-    if (isConfigValid) {
-      try {
-        const app = initializeApp(firebaseConfig);
-        const authInstance = getAuth(app);
-        const dbInstance = getFirestore(app);
-        
-        setDb(dbInstance);
-        setAuth(authInstance);
-        setLogLevel('Debug'); // Enable Firestore logging
+    try {
+      const app = initializeApp(firebaseConfig);
+      const authInstance = getAuth(app);
+      const dbInstance = getFirestore(app);
+      
+      setDb(dbInstance);
+      setAuth(authInstance);
 
-        const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
-          if (user) {
-            setUserId(user.uid);
-          } else {
-            // No user, sign in anonymously
-            try {
-              await signInAnonymously(authInstance);
-            } catch (authError) {
-              console.error("Error signing in anonymously:", authError);
-              // This can happen if Anonymous auth isn't enabled in Firebase
-            }
-          }
+      const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
+        if (user) {
+          setUserId(user.uid);
           setIsAuthReady(true);
-        });
-        
-        return () => unsubscribe(); // Cleanup listener
-        
-      } catch (e) {
-        console.error("Error initializing Firebase:", e);
-        // This can happen for various reasons, including config errors
-        setIsConfigValid(false); 
-        console.error("Setting isConfigValid to false due to init error.");
-      }
+        } else {
+          // Check for the preview environment's special token first
+          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            try {
+              await signInWithCustomToken(authInstance, __initial_auth_token);
+              console.log("Signed in with preview token.");
+            } catch (tokenError) {
+              console.error("Error signing in with preview token, falling back to anonymous:", tokenError);
+              // If token fails, fall back to anonymous (which will also fail if keys are wrong, but it's the right flow)
+              await signInAnonymously(authInstance);
+            }
+          } else {
+            // No preview token, just sign in anonymously (for production)
+            console.log("No preview token, signing in anonymously.");
+            signInAnonymously(authInstance).catch((authError) => {
+              console.error("Error signing in anonymously:", authError);
+            });
+          }
+        }
+      });
+      
+      return () => unsubscribe(); // Cleanup listener
+      
+    } catch (e) {
+      console.error("Error initializing Firebase:", e);
     }
-  }, [isConfigValid]); // Only run this effect when isConfigValid changes
+  }, []); // Only run once on mount
 
 
   /**
@@ -927,15 +943,16 @@ export default function App() {
         setReportData(report); // Show immediate report
         
         // 2. Save report to Firestore
-        if (db && isAuthReady) {
+        if (db && isAuthReady && userId) { // <-- Added check for userId
           try {
-            // Updated to a simpler, dedicated collection path
-            const collectionPath = `/completedJobs`;
+            // Use a conditional path for preview vs. production
+            const collectionPath = typeof __app_id !== 'undefined' && __app_id !== 'default-app-id'
+              ? `artifacts/${appId}/users/${userId}/completedJobs` // <-- Use private user path
+              : `completedJobs`;
             await addDoc(collection(db, collectionPath), report);
             console.log("Report saved to database.");
           } catch (e) {
             console.error("Error saving report to database:", e);
-            // Don't block UI, just log the error
           }
         } else {
           console.warn("Firestore not ready, report not saved.");
@@ -975,7 +992,7 @@ export default function App() {
    * Handles searching the database
    */
   const handleSearch = async (searchType, searchValue) => {
-    if (!db || !isAuthReady) {
+    if (!db || !isAuthReady || !userId) { // <-- Added check for userId
       setSearchError("Database not connected. Please wait and try again.");
       return;
     }
@@ -993,8 +1010,10 @@ export default function App() {
     setSearchResults([]);
     
     try {
-      // Updated to the simpler collection path
-      const collectionPath = `/completedJobs`;
+      // Use a conditional path for preview vs. production
+      const collectionPath = typeof __app_id !== 'undefined' && __app_id !== 'default-app-id'
+        ? `artifacts/${appId}/users/${userId}/completedJobs` // <-- Use private user path
+        : `completedJobs`;
       const q = query(collection(db, collectionPath), where(searchType, "==", searchValue));
       
       const querySnapshot = await getDocs(q);
@@ -1003,7 +1022,6 @@ export default function App() {
         results.push({ id: doc.id, ...doc.data() });
       });
       
-      // In-memory sort since we can't order by finishTime in Firestore without an index
       results.sort((a, b) => new Date(b.finishTime) - new Date(a, b)); 
       
       setSearchResults(results);
@@ -1020,7 +1038,7 @@ export default function App() {
    * Fetches all completed jobs from the database, sorted by date
    */
   const handleFetchAllJobs = async () => {
-    if (!db || !isAuthReady) {
+    if (!db || !isAuthReady || !userId) { // <-- Added check for userId
       setSearchError("Database not connected. Please wait and try again.");
       return;
     }
@@ -1029,9 +1047,10 @@ export default function App() {
     setSearchResults([]);
     
     try {
-      // Updated to the simpler collection path
-      const collectionPath = `/completedJobs`;
-      // Get all documents, no 'where' clause
+      // Use a conditional path for preview vs. production
+      const collectionPath = typeof __app_id !== 'undefined' && __app_id !== 'default-app-id'
+        ? `artifacts/${appId}/users/${userId}/completedJobs` // <-- Use private user path
+        : `completedJobs`;
       const querySnapshot = await getDocs(collection(db, collectionPath));
       
       const results = [];
@@ -1039,7 +1058,6 @@ export default function App() {
         results.push({ id: doc.id, ...doc.data() });
       });
       
-      // In-memory sort as requested: most recent first
       results.sort((a, b) => new Date(b.finishTime) - new Date(a.finishTime)); 
       
       setSearchResults(results);
@@ -1054,12 +1072,17 @@ export default function App() {
    * Opens the search modal and pre-populates it with all jobs
    */
   const handleOpenSearchModal = () => {
+    if (!db || !isAuthReady || !userId) { // <-- Added check for userId
+      setSearchError("Database not connected. Please wait and try again.");
+      setSearchModalOpen(true);
+      return;
+    }
+  
     setSearchModalOpen(true);
     setSearchError(null);
     setSearchResults([]); // Clear old results
     setIsSearching(true); // Show loading spinner
     
-    // Fetch all jobs, then stop loading
     handleFetchAllJobs().finally(() => {
       setIsSearching(false);
     });
@@ -1072,32 +1095,8 @@ export default function App() {
     setReportToView(report);
     setSearchModalOpen(false); // Close search modal
   };
-
-  // --- Render for Invalid Config ---
-  if (!isConfigValid) {
-    return (
-      <div className="min-h-screen bg-gray-900 text-gray-100 p-4 sm:p-8 flex items-center justify-center">
-        <div className="bg-gray-800 rounded-2xl shadow-lg p-8 max-w-2xl w-full text-center">
-          <h1 className="text-3xl font-bold text-red-400 mb-4">Configuration Error</h1>
-          <p className="text-lg text-gray-300 mb-6">
-            The Firebase database is not connected. This is expected because you haven't entered your private Firebase keys.
-          </p>
-          <p className="text-gray-400 mb-6">
-            To fix this, you need to edit the <code className="bg-gray-700 px-2 py-1 rounded">machine-monitor.jsx</code> file:
-          </p>
-          <ol className="text-left text-gray-300 space-y-3 list-decimal list-inside">
-            <li>Go to <a href="https://firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">Firebase</a> and create a new project.</li>
-            <li>In your project settings, find your <code className="bg-gray-700 px-2 py-1 rounded">firebaseConfig</code> object.</li>
-            <li>Paste it into the <code className="bg-gamma-700 px-2 py-1 rounded">firebaseConfig</code> variable at the top of the file.</li>
-            <li>In Firebase, go to "Authentication" &gt; "Sign-in method" and enable "Anonymous".</li>
-            <li>In Firebase, go to "Firestore Database" and create a new database.</li>
-          </ol>
-        </div>
-      </div>
-    );
-  }
   
-  // --- Main App Render (if config is valid) ---
+  // --- Main App Render ---
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 p-4 sm:p-8">
       <header className="text-center my-8">
@@ -1177,3 +1176,4 @@ export default function App() {
     </div>
   );
 }
+
