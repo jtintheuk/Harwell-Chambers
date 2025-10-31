@@ -91,11 +91,7 @@
       return body;
     }
 
-    // --- Firebase Config ---
-    // Use preview config if available (for this environment), 
-    // otherwise fall back to production config (for GitHub/Netlify)
-    const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config
-      const firebaseConfig = {
+   const firebaseConfig = {
   apiKey: "AIzaSyA7soD0H7TRwuAn8R6S9MHodE6VPGpRhFI",
   authDomain: "harwell-chamber-monitoring.firebaseapp.com",
   projectId: "harwell-chamber-monitoring",
@@ -103,12 +99,6 @@
   messagingSenderId: "620112704693",
   appId: "1:620112704693:web:f6795325bef01773f33afc"
 };
-    // ========================================================================
-
-    // Check if we are in the preview environment and sanitize app ID
-    const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    const appId = rawAppId.split('/')[0]; // Remove any potential slashes
-    const isPreview = typeof __app_id !== 'undefined' && __app_id !== 'default-app-id';
 
     // --- Initial Data ---
     const INITIAL_MACHINES = [
