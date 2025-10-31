@@ -95,15 +95,14 @@
     // Use preview config if available (for this environment), 
     // otherwise fall back to production config (for GitHub/Netlify)
     const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config
-      ? JSON.parse(__firebase_config) 
-      : {
-          apiKey: "AIzaSyA7bQNTmraeaAnB8S9MWobDEVjPgRihFI",
-          authDomain: "harwell-chamber-monitoring.firebaseapp.com",
-          projectId: "harwell-chamber-monitoring",
-          storageBucket: "harwell-chamber-monitoring.appspot.com",
-          messagingSenderId: "620112704693",
-          appId: "1:620112704693:web:f6795328bef8177f33f0fc"
-        };
+      const firebaseConfig = {
+  apiKey: "AIzaSyA7soD0H7TRwuAn8R6S9MHodE6VPGpRhFI",
+  authDomain: "harwell-chamber-monitoring.firebaseapp.com",
+  projectId: "harwell-chamber-monitoring",
+  storageBucket: "harwell-chamber-monitoring.firebasestorage.app",
+  messagingSenderId: "620112704693",
+  appId: "1:620112704693:web:f6795325bef01773f33afc"
+};
     // ========================================================================
 
     // Check if we are in the preview environment and sanitize app ID
