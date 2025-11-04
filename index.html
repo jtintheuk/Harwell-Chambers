@@ -592,9 +592,7 @@
         setSearchError(null);
         setSearchResults([]);
         try {
-          const collectionPath = isPreview
-            ? `artifacts/${appId}/users/${userId}/completedJobs`
-            : `completedJobs`;
+          const collectionPath = `completedJobs`;
           const q = query(collection(db, collectionPath), where(searchType, "==", searchValue));
           const querySnapshot = await getDocs(q);
           const results = [];
@@ -616,9 +614,7 @@
         setSearchError(null);
         setSearchResults([]);
         try {
-          const collectionPath = isPreview
-            ? `artifacts/${appId}/users/${userId}/completedJobs`
-            : `completedJobs`;
+          const collectionPath = `completedJobs`;
           const querySnapshot = await getDocs(collection(db, collectionPath));
           const results = [];
           querySnapshot.forEach((doc) => results.push({ id: doc.id, ...doc.data() }));
