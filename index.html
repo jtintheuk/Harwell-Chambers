@@ -1,4 +1,4 @@
-!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -10,10 +10,6 @@
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <!-- 3. Load Firebase (as modules) -->
-  <script type="module">
-    // We'll initialize firebase in the main app script
-  </script>
   
   <style>
     /* A small style to make the background dark by default */
@@ -27,14 +23,22 @@
   <div id="root"></div>
 
   <!-- 4. This is your ENTIRE React Application -->
-  <!-- Added data-type="module" to fix Babel's handling of import statements -->
   <script type="text/babel" data-type="module">
 
     // --- Firebase Modules ---
-    // We must import them this way when using "text/babel"
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-    import { getFirestore, doc, addDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { 
+      getFirestore, 
+      doc, 
+      addDoc, 
+      collection, 
+      query, 
+      where, 
+      getDocs,
+      setDoc, // We now need setDoc to save machine state
+      onSnapshot // We now need onSnapshot for real-time updates
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     // --- Helper Functions ---
 
@@ -91,16 +95,21 @@
       return body;
     }
 
-   const firebaseConfig = {
-  apiKey: "AIzaSyA7soD0H7TRwuAn8R6S9MHodE6VPGpRhFI",
-  authDomain: "harwell-chamber-monitoring.firebaseapp.com",
-  projectId: "harwell-chamber-monitoring",
-  storageBucket: "harwell-chamber-monitoring.firebasestorage.app",
-  messagingSenderId: "620112704693",
-  appId: "1:620112704693:web:f6795325bef01773f33afc"
-};
+    // --- Firebase Config ---
+    // This is your production config.
+    const firebaseConfig = {
+      apiKey: "AIzaSyA7soD0H7TRwuAn8R6S9MHodE6VPGpRhFI",
+      authDomain: "harwell-chamber-monitoring.firebaseapp.com",
+      projectId: "harwell-chamber-monitoring",
+      storageBucket: "harwell-chamber-monitoring.firebasestorage.app",
+      messagingSenderId: "620112704693",
+      appId: "1:620112704693:web:f6795325bef01773f33afc"
+    };
+    // ========================================================================
+
 
     // --- Initial Data ---
+    // This is now only used to set up the database the *first time* it's run.
     const INITIAL_MACHINES = [
       { id: 1, name: "Valley 1", currentJobs: [], status: "Idle", startTime: null, finishTime: null, downtimeLog: [], currentDowntimeStart: null, currentDowntimeDescription: null },
       { id: 2, name: "McKenzie 5", currentJobs: [], status: "Idle", startTime: null, finishTime: null, downtimeLog: [], currentDowntimeStart: null, currentDowntimeDescription: null },
@@ -336,6 +345,10 @@
 
       useEffect(() => {
         if (startTime) {
+          // Immediately set the elapsed time
+          setElapsed(new Date() - new Date(startTime));
+          
+          // Then set up the interval to update it
           const timer = setInterval(() => {
             setElapsed(new Date() - new Date(startTime));
           }, 1000);
@@ -347,179 +360,76 @@
       return <p className="text-2xl font-mono text-center text-blue-300">{formatDuration(elapsed)}</p>;
     }
 
-    function MachineCard({ machine, onUpdate, onCompleteJobRequest, onDowntimeRequest, onAddJobRequest, onStartMachine }) {
-      const handleAddJob = () => onAddJobRequest(machine.id);
-      
-      const handleDowntimeToggle = () => {
-        if (machine.status === "Running") {
-          onDowntimeRequest(machine.id);
-        } else if (machine.status === "Down") {
-          const newLogEntry = {
-            downAt: machine.currentDowntimeStart,
-            upAt: new Date().toISOString(),
-            description: machine.currentDowntimeDescription,
-          };
-          onUpdate({ ...machine, status: "Running", downtimeLog: [...machine.downtimeLog, newLogEntry], currentDowntimeStart: null, currentDowntimeDescription: null });
-        }
-      };
-      
-      const handleCompleteJob = (jobId) => onCompleteJobRequest(machine.id, jobId);
-
-      const statusColors = { Idle: "bg-gray-500", Running: "bg-green-500 animate-pulse", Down: "bg-yellow-500 animate-pulse" };
-
-      return (
-        <div className="bg-gray-800 rounded-2xl shadow-lg p-6 flex flex-col justify-between transition-all hover:shadow-2xl">
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-2xl font-bold text-white">{machine.name}</h3>
-              <span className={`px-4 py-1 rounded-full text-sm font-semibold text-white ${statusColors[machine.status]}`}>
-                {machine.status}
-              </span>
-            </div>
-            <h4 className="text-gray-400 mb-2 mt-4">Current Jobs</h4>
-            <div className="mb-6 min-h-[120px]">
-              {machine.currentJobs.length === 0 ? (
-                <p className="text-lg text-gray-500 font-medium mb-6 italic text-center p-4">No jobs active.</p>
-              ) : (
-                <ul className="space-y-3 text-gray-300">
-                  {machine.currentJobs.map((job) => (
-                    <li key={job.jobId} className="bg-gray-700/50 p-3 rounded-md">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="font-bold text-lg text-green-300">{job.jobName}</span>
-                        <button onClick={() => handleCompleteJob(job.jobId)} className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded shadow hover:bg-red-700 transition-all">
-                          End Job
-                        </button>
-                      </div>
-                      <div className="flex justify-between text-sm text-blue-300">
-                        <span>WR #: {job.wrNumber}</span>
-                        <span>Crates: {job.crateCount}</span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            {machine.status !== "Idle" && (
-              <div className="mb-6">
-                <p className="text-gray-400 text-sm text-center">Job Started: {formatDateTime(machine.startTime)}</p>
-                <p className="text-gray-400 text-sm text-center mb-2">Total Elapsed Time:</p>
-                <RunningTimer startTime={machine.startTime} />
-              </div>
-            )}
-          </div>
-          <div className="space-y-3">
-            <button onClick={handleAddJob} className="w-full p-4 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition-all">
-              Add Job
-            </button>
-            {machine.status === "Idle" && machine.currentJobs.length > 0 && (
-              <button onClick={() => onStartMachine(machine.id)} className="w-full p-4 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition-all">
-                Start Machine
-              </button>
-            )}
-            {machine.status === "Running" && (
-              <button onClick={handleDowntimeToggle} className="w-full p-4 bg-yellow-500 text-gray-900 font-bold rounded-lg shadow-md hover:bg-yellow-600 transition-all">
-                Report Downtime
-              </button>
-            )}
-            {machine.status === "Down" && (
-              <button onClick={handleDowntimeToggle} className="w-full p-4 bg-blue-500 text-white font-bold rounded-lg shadow-md hover:bg-blue-600 transition-all">
-                Resume Production
-              </button>
-            )}
-          </div>
-        </div>
-      );
-    }
-
-    /**
-     * Main Application Component
-     */
-    function App() {
-      const [machines, setMachines] = useState(INITIAL_MACHINES);
+    // This is the *only* component that writes to the database.
+    // The main App component *reads* from the database.
+    function MachineCard({ machine, db }) {
       const [confirmModalData, setConfirmModalData] = useState({ machineId: null, jobId: null });
       const [downtimeModalMachineId, setDowntimeModalMachineId] = useState(null);
       const [addJobModalMachineId, setAddJobModalMachineId] = useState(null);
       const [reportData, setReportData] = useState(null);
-      const [db, setDb] = useState(null);
-      const [auth, setAuth] = useState(null);
-      const [userId, setUserId] = useState(null);
-      const [isAuthReady, setIsAuthReady] = useState(false);
-      const [searchModalOpen, setSearchModalOpen] = useState(false);
-      const [isSearching, setIsSearching] = useState(false);
-      const [searchResults, setSearchResults] = useState([]);
-      const [searchError, setSearchError] = useState(null);
-      const [reportToView, setReportToView] = useState(null);
-
-      useEffect(() => {
-        try {
-          const app = initializeApp(firebaseConfig);
-          const authInstance = getAuth(app);
-          const dbInstance = getFirestore(app);
-          setDb(dbInstance);
-          setAuth(authInstance);
-
-          const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
-            if (user) {
-              setUserId(user.uid);
-              setIsAuthReady(true);
-            } else {
-              // Check for the preview environment's special token first
-              if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                try {
-                  await signInWithCustomToken(authInstance, __initial_auth_token);
-                  console.log("Signed in with preview token.");
-                } catch (tokenError) {
-                  console.error("Error signing in with preview token, falling back to anonymous:", tokenError);
-                  await signInAnonymously(authInstance);
-                }
-              } else {
-                // No preview token, just sign in anonymously (for production)
-                console.log("No preview token, signing in anonymously.");
-                signInAnonymously(authInstance).catch((authError) => {
-                  console.error("Error signing in anonymously:", authError);
-                });
-              }
-            }
-          });
-          return () => unsubscribe();
-        } catch (e) {
-          console.error("Error initializing Firebase:", e);
-        }
-      }, []);
-
-      const handleUpdateMachine = (updatedMachine) => {
-        setMachines((prevMachines) =>
-          prevMachines.map((m) => (m.id === updatedMachine.id ? updatedMachine : m))
-        );
+      
+      /**
+       * Helper function to save the machine's state to Firestore
+       */
+      const updateMachineInDb = async (updatedMachine) => {
+        if (!db) return;
+        // The document ID is the machine's ID, converted to a string
+        const machineRef = doc(db, "machines", String(updatedMachine.id));
+        await setDoc(machineRef, updatedMachine);
       };
 
-      const handleAddJobRequest = (machineId) => setAddJobModalMachineId(machineId);
-      const handleDowntimeRequest = (machineId) => setDowntimeModalMachineId(machineId);
-      const handleCompleteJobRequest = (machineId, jobId) => setConfirmModalData({ machineId, jobId });
+      const handleAddJobRequest = () => setAddJobModalMachineId(machine.id);
+      
+      const handleDowntimeRequest = () => setDowntimeModalMachineId(machine.id);
+      
+      const handleCompleteJobRequest = (jobId) => setConfirmModalData({ machineId: machine.id, jobId });
 
       const handleAddJobSubmit = (jobData) => {
-        if (!addJobModalMachineId) return;
-        const machineToUpdate = machines.find((m) => m.id === addJobModalMachineId);
-        if (machineToUpdate) {
-          handleUpdateMachine({ ...machineToUpdate, currentJobs: [...machineToUpdate.currentJobs, jobData] });
-        }
+        const updatedJobs = [...machine.currentJobs, jobData];
+        updateMachineInDb({
+          ...machine,
+          currentJobs: updatedJobs,
+        });
         setAddJobModalMachineId(null);
       };
 
-      const handleStartMachine = (machineId) => {
-        const machineToStart = machines.find((m) => m.id === machineId);
-        if (machineToStart && machineToStart.status === "Idle" && machineToStart.currentJobs.length > 0) {
-          handleUpdateMachine({ ...machineToStart, status: "Running", startTime: new Date().toISOString(), finishTime: null, downtimeLog: [], currentDowntimeStart: null, currentDowntimeDescription: null });
+      const handleStartMachine = () => {
+        if (machine.status === "Idle" && machine.currentJobs.length > 0) {
+          updateMachineInDb({
+            ...machine,
+            status: "Running",
+            startTime: new Date().toISOString(),
+            finishTime: null,
+            downtimeLog: [],
+            currentDowntimeStart: null,
+            currentDowntimeDescription: null,
+          });
         }
       };
 
       const handleDowntimeSubmit = (description) => {
-        if (!downtimeModalMachineId) return;
-        const machineToUpdate = machines.find((m) => m.id === downtimeModalMachineId);
-        if (machineToUpdate) {
-          handleUpdateMachine({ ...machineToUpdate, status: "Down", currentDowntimeStart: new Date().toISOString(), currentDowntimeDescription: description });
-        }
+        updateMachineInDb({
+          ...machine,
+          status: "Down",
+          currentDowntimeStart: new Date().toISOString(),
+          currentDowntimeDescription: description,
+        });
         setDowntimeModalMachineId(null);
+      };
+      
+      const handleResumeProduction = () => {
+         const newLogEntry = {
+          downAt: machine.currentDowntimeStart,
+          upAt: new Date().toISOString(),
+          description: machine.currentDowntimeDescription,
+        };
+        updateMachineInDb({
+          ...machine,
+          status: "Running",
+          downtimeLog: [...machine.downtimeLog, newLogEntry],
+          currentDowntimeStart: null,
+          currentDowntimeDescription: null,
+        });
       };
 
       const generateReport = (machine, job) => {
@@ -548,37 +458,224 @@
       };
 
       const handleConfirmCompletion = async (confirmed) => {
-        const { machineId, jobId } = confirmModalData;
-        if (confirmed && machineId && jobId) {
-          const machineToComplete = machines.find((m) => m.id === machineId);
-          const jobToComplete = machineToComplete?.currentJobs.find(j => j.jobId === jobId);
-          if (machineToComplete && jobToComplete) {
-            const report = generateReport(machineToComplete, jobToComplete);
-            setReportData(report);
-            if (db && isAuthReady && userId) {
+        const { jobId } = confirmModalData;
+        if (confirmed && machine.id && jobId) {
+          const jobToComplete = machine.currentJobs.find(j => j.jobId === jobId);
+          if (jobToComplete) {
+            
+            const report = generateReport(machine, jobToComplete);
+            setReportData(report); // Show immediate report
+            
+            // Save completed job to 'completedJobs' collection
+            if (db) {
               try {
-              const collectionPath = `completedJobs`;
-                await addDoc(collection(db, collectionPath), report);
+                await addDoc(collection(db, "completedJobs"), report);
                 console.log("Report saved to database.");
               } catch (e) {
                 console.error("Error saving report to database:", e);
               }
-            } else {
-              console.warn("Firestore not ready, report not saved.");
             }
-            const updatedJobs = machineToComplete.currentJobs.filter(job => job.jobId !== jobId);
+            
+            // Remove the job from the machine's state
+            const updatedJobs = machine.currentJobs.filter(
+              job => job.jobId !== jobId 
+            );
+
             if (updatedJobs.length === 0) {
-              handleUpdateMachine({ ...machineToComplete, status: "Idle", startTime: null, finishTime: null, downtimeLog: [], currentDowntimeStart: null, currentDowntimeDescription: null, currentJobs: [] });
+              // This was the last job, reset machine to Idle
+              updateMachineInDb({
+                ...machine,
+                status: "Idle",
+                startTime: null,
+                finishTime: null,
+                downtimeLog: [],
+                currentDowntimeStart: null,
+                currentDowntimeDescription: null,
+                currentJobs: [],
+              });
             } else {
-              handleUpdateMachine({ ...machineToComplete, currentJobs: updatedJobs });
+              // Other jobs are still running, just update the job list
+              updateMachineInDb({
+                ...machine,
+                currentJobs: updatedJobs,
+              });
             }
           }
         }
         setConfirmModalData({ machineId: null, jobId: null });
       };
 
+      const statusColors = { Idle: "bg-gray-500", Running: "bg-green-500 animate-pulse", Down: "bg-yellow-500 animate-pulse" };
+
+      return (
+        <React.Fragment>
+          <div className="bg-gray-800 rounded-2xl shadow-lg p-6 flex flex-col justify-between transition-all hover:shadow-2xl">
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-2xl font-bold text-white">{machine.name}</h3>
+                <span className={`px-4 py-1 rounded-full text-sm font-semibold text-white ${statusColors[machine.status]}`}>
+                  {machine.status}
+                </span>
+              </div>
+              <h4 className="text-gray-400 mb-2 mt-4">Current Jobs</h4>
+              <div className="mb-6 min-h-[120px]">
+                {machine.currentJobs.length === 0 ? (
+                  <p className="text-lg text-gray-500 font-medium mb-6 italic text-center p-4">No jobs active.</p>
+                ) : (
+                  <ul className="space-y-3 text-gray-300">
+                    {machine.currentJobs.map((job) => (
+                      <li key={job.jobId} className="bg-gray-700/50 p-3 rounded-md">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-bold text-lg text-green-300">{job.jobName}</span>
+                          <button onClick={() => handleCompleteJob(job.jobId)} className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded shadow hover:bg-red-700 transition-all">
+                            End Job
+                          </button>
+                        </div>
+                        <div className="flex justify-between text-sm text-blue-300">
+                          <span>WR #: {job.wrNumber}</span>
+                          <span>Crates: {job.crateCount}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              {machine.status !== "Idle" && (
+                <div className="mb-6">
+                  <p className="text-gray-400 text-sm text-center">Job Started: {formatDateTime(machine.startTime)}</p>
+                  <p className="text-gray-400 text-sm text-center mb-2">Total Elapsed Time:</p>
+                  <RunningTimer startTime={machine.startTime} />
+                </div>
+              )}
+            </div>
+            <div className="space-y-3">
+              <button onClick={handleAddJobRequest} className="w-full p-4 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition-all">
+                Add Job
+              </button>
+              {machine.status === "Idle" && machine.currentJobs.length > 0 && (
+                <button onClick={handleStartMachine} className="w-full p-4 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition-all">
+                  Start Machine
+                </button>
+              )}
+              {machine.status === "Running" && (
+                <button onClick={handleDowntimeRequest} className="w-full p-4 bg-yellow-500 text-gray-900 font-bold rounded-lg shadow-md hover:bg-yellow-600 transition-all">
+                  Report Downtime
+                </button>
+              )}
+              {machine.status === "Down" && (
+                <button onClick={handleResumeProduction} className="w-full p-4 bg-blue-500 text-white font-bold rounded-lg shadow-md hover:bg-blue-600 transition-all">
+                  Resume Production
+                </button>
+              )}
+            </div>
+          </div>
+          
+          {/* Modals are rendered here, controlled by this card's state */}
+          {confirmModalData.machineId === machine.id && (
+            <ConfirmationModal onConfirm={handleConfirmCompletion} />
+          )}
+          {addJobModalMachineId === machine.id && (
+            <AddJobModal
+              onClose={() => setAddJobModalMachineId(null)}
+              onSubmit={handleAddJobSubmit}
+            />
+          )}
+          {downtimeModalMachineId === machine.id && (
+            <DowntimeModal
+              onClose={() => setDowntimeModalMachineId(null)}
+              onSubmit={handleDowntimeSubmit}
+            />
+          )}
+          {reportData && (
+             <ReportModal 
+              reportData={reportData} 
+              onClose={() => setReportData(null)} 
+            />
+          )}
+        </React.Fragment>
+      );
+    }
+
+    /**
+     * Main Application Component
+     */
+    function App() {
+      // The `machines` state is now just a mirror of the database
+      const [machines, setMachines] = useState([]); 
+      
+      const [db, setDb] = useState(null);
+      const [auth, setAuth] = useState(null);
+      const [userId, setUserId] = useState(null);
+      const [isAuthReady, setIsAuthReady] = useState(false);
+      
+      // Search state is still held in the main App
+      const [searchModalOpen, setSearchModalOpen] = useState(false);
+      const [isSearching, setIsSearching] = useState(false);
+      const [searchResults, setSearchResults] = useState([]);
+      const [searchError, setSearchError] = useState(null);
+      const [reportToView, setReportToView] = useState(null);
+
+      // --- Firebase Initialization and Real-time Listener ---
+      useEffect(() => {
+        let unsubscribe = () => {}; // Placeholder for snapshot listener cleanup
+        
+        try {
+          const app = initializeApp(firebaseConfig);
+          const authInstance = getAuth(app);
+          const dbInstance = getFirestore(app);
+          setDb(dbInstance);
+          setAuth(authInstance);
+
+          const authUnsubscribe = onAuthStateChanged(authInstance, async (user) => {
+            if (user) {
+              setUserId(user.uid);
+              setIsAuthReady(true);
+              
+              // --- USER IS READY, NOW LISTEN TO MACHINES ---
+              const machinesCollection = collection(dbInstance, "machines");
+              
+              // onSnapshot listens for *any* changes to the 'machines' collection
+              unsubscribe = onSnapshot(machinesCollection, async (querySnapshot) => {
+                if (querySnapshot.empty) {
+                  // Database is empty, populate it ONCE
+                  console.log("No machines found. Initializing database...");
+                  for (const machine of INITIAL_MACHINES) {
+                    // Use machine.id as the document ID
+                    const machineRef = doc(dbInstance, "machines", String(machine.id));
+                    await setDoc(machineRef, machine);
+                  }
+                } else {
+                  // Database has data, update our React state
+                  const machinesFromDb = querySnapshot.docs.map(doc => doc.data());
+                  machinesFromDb.sort((a, b) => a.id - b.id); // Ensure correct order
+                  setMachines(machinesFromDb);
+                }
+              });
+              // ---------------------------------------------
+              
+            } else {
+              // No user, sign in anonymously (for production)
+              console.log("No user, signing in anonymously.");
+              signInAnonymously(authInstance).catch((authError) => {
+                console.error("Error signing in anonymously:", authError);
+              });
+            }
+          });
+          
+          return () => {
+            authUnsubscribe(); // Cleanup auth listener
+            unsubscribe(); // Cleanup snapshot listener
+          };
+          
+        } catch (e) {
+          console.error("Error initializing Firebase:", e);
+        }
+      }, []); // Only run once on mount
+
+      // --- Search Functions (remain in App component) ---
+      
       const handleSearch = async (searchType, searchValue) => {
-        if (!db || !isAuthReady || !userId) {
+        if (!db || !isAuthReady) {
           setSearchError("Database not connected. Please wait and try again.");
           return;
         }
@@ -602,12 +699,22 @@
         } catch (e) {
           console.error("Error searching database:", e);
           setSearchError("An error occurred during the search. Please check console.");
+          
+          // Check for index error
+          if (e.code === 'failed-precondition') {
+             setSearchError(
+              <span>
+                Query requires an index. Please open the console (F12), 
+                click the link in the error, and create the index in Firebase.
+              </span>
+            );
+          }
         }
         setIsSearching(false);
       };
-
+      
       const handleFetchAllJobs = async () => {
-        if (!db || !isAuthReady || !userId) {
+        if (!db || !isAuthReady) {
           setSearchError("Database not connected. Please wait and try again.");
           return;
         }
@@ -627,7 +734,7 @@
       };
 
       const handleOpenSearchModal = () => {
-        if (!db || !isAuthReady || !userId) {
+        if (!db || !isAuthReady) {
           setSearchError("Database not connected. Please wait and try again.");
           setSearchModalOpen(true);
           return;
@@ -645,7 +752,8 @@
         setReportToView(report);
         setSearchModalOpen(false);
       };
-
+      
+      // --- Main App Render ---
       return (
         <div className="min-h-screen bg-gray-900 text-gray-100 p-4 sm:p-8">
           <header className="text-center my-8">
@@ -653,31 +761,51 @@
               Harwell Vacuum Chambers
             </h1>
             <div className="mt-6">
-              <button onClick={handleOpenSearchModal} className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-all" disabled={!isAuthReady}>
-                {isAuthReady ? "Search Completed Jobs" : "Connecting to Database..."}
+              <button 
+                onClick={handleOpenSearchModal} 
+                className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-all" 
+                disabled={!isAuthReady || machines.length === 0}
+              >
+                {(!isAuthReady || machines.length === 0) ? "Connecting to Database..." : "Search Completed Jobs"}
               </button>
             </div>
           </header>
           <main>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
-              {machines.map((machine) => (
-                <MachineCard
-                  key={machine.id}
-                  machine={machine}
-                  onUpdate={handleUpdateMachine}
-                  onCompleteJobRequest={handleCompleteJobRequest}
-                  onDowntimeRequest={handleDowntimeRequest}
-                  onAddJobRequest={handleAddJobRequest}
-                  onStartMachine={handleStartMachine}
-                />
-              ))}
-            </div>
+            {machines.length === 0 ? (
+              <div className="text-center text-gray-400 text-xl p-8">
+                Loading machine data from database...
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
+                {machines.map((machine) => (
+                  <MachineCard
+                    key={machine.id}
+                    machine={machine}
+                    db={db} // Pass the database instance to each card
+                  />
+                ))}
+              </div>
+            )}
           </main>
-          {confirmModalData.machineId && <ConfirmationModal onConfirm={handleConfirmCompletion} />}
-          {addJobModalMachineId && <AddJobModal onClose={() => setAddJobModalMachineId(null)} onSubmit={handleAddJobSubmit} />}
-          {downtimeModalMachineId && <DowntimeModal onClose={() => setDowntimeModalMachineId(null)} onSubmit={handleDowntimeSubmit} />}
-          {(reportData || reportToView) && <ReportModal reportData={reportToView || reportData} onClose={() => { setReportData(null); setReportToView(null); }} />}
-          {searchModalOpen && <SearchModal onClose={() => { setSearchModalOpen(false); setSearchResults([]); setSearchError(null); }} onSearch={handleSearch} onViewReport={handleViewReport} results={searchResults} isSearching={isSearching} error={searchError} />}
+
+          {/* Search/Report Modals are rendered here, controlled by App state */}
+          {(reportToView) && (
+             <ReportModal 
+              reportData={reportToView} 
+              onClose={() => setReportToView(null)} 
+            />
+          )}
+          
+          {searchModalOpen && (
+            <SearchModal 
+              onClose={() => { setSearchModalOpen(false); setSearchResults([]); setSearchError(null); }} 
+              onSearch={handleSearch} 
+              onViewReport={handleViewReport} 
+              results={searchResults} 
+              isSearching={isSearching} 
+              error={searchError} 
+            />
+          )}
         </div>
       );
     }
@@ -688,4 +816,3 @@
   </script>
 </body>
 </html>
-
