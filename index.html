@@ -557,10 +557,7 @@
             setReportData(report);
             if (db && isAuthReady && userId) {
               try {
-                // Use a conditional path for preview vs. production
-                const collectionPath = isPreview
-                  ? `artifacts/${appId}/users/${userId}/completedJobs`
-                  : `completedJobs`;
+              const collectionPath = `completedJobs`;
                 await addDoc(collection(db, collectionPath), report);
                 console.log("Report saved to database.");
               } catch (e) {
