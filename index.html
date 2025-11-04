@@ -527,7 +527,7 @@
                       <li key={job.jobId} className="bg-gray-700/50 p-3 rounded-md">
                         <div className="flex justify-between items-center mb-2">
                           <span className="font-bold text-lg text-green-300">{job.jobName}</span>
-                          <button onClick={() => handleCompleteJob(job.jobId)} className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded shadow hover:bg-red-700 transition-all">
+                          <button onClick={() => handleCompleteJobRequest(job.jobId)} className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded shadow hover:bg-red-700 transition-all">
                             End Job
                           </button>
                         </div>
