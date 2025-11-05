@@ -16,6 +16,11 @@
     body {
       background-color: #111827; /* bg-gray-900 */
     }
+    /* Style for disabled buttons */
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -27,7 +32,13 @@
 
     // --- Firebase Modules ---
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { 
+      getAuth, 
+      signInAnonymously, 
+      onAuthStateChanged,
+      signInWithEmailAndPassword, // Added for Editor login
+      signOut // Added for logout
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import { 
       getFirestore, 
       doc, 
@@ -36,13 +47,20 @@
       query, 
       where, 
       getDocs,
-      setDoc, // We now need setDoc to save machine state
-      onSnapshot // We now need onSnapshot for real-time updates
+      setDoc, 
+      onSnapshot 
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     // --- Helper Functions ---
 
-    const { useState, useEffect } = React;
+    const { useState, useEffect, createContext, useContext } = React;
+
+    // --- Auth Context ---
+    // We create a simple "Context" to let all components know if the user is an Editor.
+    const AuthContext = createContext({ 
+      isEditor: false, 
+      userEmail: null 
+    });
 
     function formatDuration(ms) {
       if (ms < 0) ms = 0;
@@ -96,7 +114,6 @@
     }
 
     // --- Firebase Config ---
-    // This is your production config.
     const firebaseConfig = {
       apiKey: "AIzaSyA7soD0H7TRwuAn8R6S9MHodE6VPGpRhFI",
       authDomain: "harwell-chamber-monitoring.firebaseapp.com",
@@ -109,7 +126,6 @@
 
 
     // --- Initial Data ---
-    // This is now only used to set up the database the *first time* it's run.
     const INITIAL_MACHINES = [
       { id: 1, name: "Valley 1", currentJobs: [], status: "Idle", startTime: null, finishTime: null, downtimeLog: [], currentDowntimeStart: null, currentDowntimeDescription: null },
       { id: 2, name: "McKenzie 5", currentJobs: [], status: "Idle", startTime: null, finishTime: null, downtimeLog: [], currentDowntimeStart: null, currentDowntimeDescription: null },
@@ -339,6 +355,65 @@
         </div>
       );
     }
+    
+    // --- NEW LOGIN MODAL ---
+    function LoginModal({ auth, onClose }) {
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+      const [error, setError] = useState(null);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError(null);
+        try {
+          await signInWithEmailAndPassword(auth, email, password);
+          onClose(); // Close modal on success
+        } catch (err) {
+          console.error("Login Error:", err);
+          setError("Login failed. Please check your email and password.");
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full text-gray-900">
+            <h3 className="text-2xl font-bold text-center mb-6">Editor Login</h3>
+            {error && <p className="text-red-500 text-center mb-4">{error}</p>}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input 
+                  type="email" 
+                  value={email} 
+                  onChange={(e) => setEmail(e.target.value)} 
+                  className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                  required 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input 
+                  type="password" 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)} 
+                  className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                  required 
+                />
+              </div>
+            </div>
+            <div className="flex justify-around mt-8">
+              <button type="submit" className="px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-all">
+                Login
+              </button>
+              <button type="button" onClick={onClose} className="px-8 py-3 bg-gray-300 text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-400 transition-all">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      );
+    }
+
 
     function RunningTimer({ startTime }) {
       const [elapsed, setElapsed] = useState(0);
@@ -360,29 +435,23 @@
       return <p className="text-2xl font-mono text-center text-blue-300">{formatDuration(elapsed)}</p>;
     }
 
-    // This is the *only* component that writes to the database.
-    // The main App component *reads* from the database.
     function MachineCard({ machine, db }) {
+      const { isEditor } = useContext(AuthContext); // Get editor status from context
+      
       const [confirmModalData, setConfirmModalData] = useState({ machineId: null, jobId: null });
       const [downtimeModalMachineId, setDowntimeModalMachineId] = useState(null);
       const [addJobModalMachineId, setAddJobModalMachineId] = useState(null);
       const [reportData, setReportData] = useState(null);
       
-      /**
-       * Helper function to save the machine's state to Firestore
-       */
       const updateMachineInDb = async (updatedMachine) => {
         if (!db) return;
-        // The document ID is the machine's ID, converted to a string
         const machineRef = doc(db, "machines", String(updatedMachine.id));
         await setDoc(machineRef, updatedMachine);
       };
 
       const handleAddJobRequest = () => setAddJobModalMachineId(machine.id);
-      
       const handleDowntimeRequest = () => setDowntimeModalMachineId(machine.id);
-      
-      const handleCompleteJobRequest = (jobId) => setConfirmModalData({ machineId: machine.id, jobId });
+      const handleCompleteJob = (jobId) => setConfirmModalData({ machineId: machine.id, jobId });
 
       const handleAddJobSubmit = (jobData) => {
         const updatedJobs = [...machine.currentJobs, jobData];
@@ -464,9 +533,8 @@
           if (jobToComplete) {
             
             const report = generateReport(machine, jobToComplete);
-            setReportData(report); // Show immediate report
+            setReportData(report); 
             
-            // Save completed job to 'completedJobs' collection
             if (db) {
               try {
                 await addDoc(collection(db, "completedJobs"), report);
@@ -476,13 +544,11 @@
               }
             }
             
-            // Remove the job from the machine's state
             const updatedJobs = machine.currentJobs.filter(
               job => job.jobId !== jobId 
             );
 
             if (updatedJobs.length === 0) {
-              // This was the last job, reset machine to Idle
               updateMachineInDb({
                 ...machine,
                 status: "Idle",
@@ -494,7 +560,6 @@
                 currentJobs: [],
               });
             } else {
-              // Other jobs are still running, just update the job list
               updateMachineInDb({
                 ...machine,
                 currentJobs: updatedJobs,
@@ -527,7 +592,12 @@
                       <li key={job.jobId} className="bg-gray-700/50 p-3 rounded-md">
                         <div className="flex justify-between items-center mb-2">
                           <span className="font-bold text-lg text-green-300">{job.jobName}</span>
-                          <button onClick={() => handleCompleteJobRequest(job.jobId)} className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded shadow hover:bg-red-700 transition-all">
+                          <button 
+                            onClick={() => handleCompleteJob(job.jobId)} 
+                            className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded shadow hover:bg-red-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={!isEditor}
+                            title={!isEditor ? "You must be logged in to make changes" : "End this job"}
+                          >
                             End Job
                           </button>
                         </div>
@@ -549,21 +619,44 @@
               )}
             </div>
             <div className="space-y-3">
-              <button onClick={handleAddJobRequest} className="w-full p-4 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition-all">
+              <button 
+                onClick={handleAddJobRequest} 
+                className="w-full p-4 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!isEditor}
+                title={!isEditor ? "You must be logged in to make changes" : "Add a new job"}
+              >
                 Add Job
               </button>
+              
               {machine.status === "Idle" && machine.currentJobs.length > 0 && (
-                <button onClick={handleStartMachine} className="w-full p-4 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition-all">
+                <button 
+                  onClick={handleStartMachine} 
+                  className="w-full p-4 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!isEditor}
+                  title={!isEditor ? "You must be logged in to make changes" : "Start the machine"}
+                >
                   Start Machine
                 </button>
               )}
+              
               {machine.status === "Running" && (
-                <button onClick={handleDowntimeRequest} className="w-full p-4 bg-yellow-500 text-gray-900 font-bold rounded-lg shadow-md hover:bg-yellow-600 transition-all">
+                <button 
+                  onClick={handleDowntimeRequest} 
+                  className="w-full p-4 bg-yellow-500 text-gray-900 font-bold rounded-lg shadow-md hover:bg-yellow-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!isEditor}
+                  title={!isEditor ? "You must be logged in to make changes" : "Report machine downtime"}
+                >
                   Report Downtime
                 </button>
               )}
+              
               {machine.status === "Down" && (
-                <button onClick={handleResumeProduction} className="w-full p-4 bg-blue-500 text-white font-bold rounded-lg shadow-md hover:bg-blue-600 transition-all">
+                <button 
+                  onClick={handleResumeProduction} 
+                  className="w-full p-4 bg-blue-500 text-white font-bold rounded-lg shadow-md hover:bg-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!isEditor}
+                  title={!isEditor ? "You must be logged in to make changes" : "Resume production"}
+                >
                   Resume Production
                 </button>
               )}
@@ -600,24 +693,23 @@
      * Main Application Component
      */
     function App() {
-      // The `machines` state is now just a mirror of the database
       const [machines, setMachines] = useState([]); 
-      
       const [db, setDb] = useState(null);
       const [auth, setAuth] = useState(null);
-      const [userId, setUserId] = useState(null);
       const [isAuthReady, setIsAuthReady] = useState(false);
+      const [authInfo, setAuthInfo] = useState({ isEditor: false, userEmail: null });
       
-      // Search state is still held in the main App
       const [searchModalOpen, setSearchModalOpen] = useState(false);
       const [isSearching, setIsSearching] = useState(false);
       const [searchResults, setSearchResults] = useState([]);
       const [searchError, setSearchError] = useState(null);
       const [reportToView, setReportToView] = useState(null);
+      
+      const [loginModalOpen, setLoginModalOpen] = useState(false); // New state for login modal
 
       // --- Firebase Initialization and Real-time Listener ---
       useEffect(() => {
-        let unsubscribe = () => {}; // Placeholder for snapshot listener cleanup
+        let unsubscribe = () => {}; 
         
         try {
           const app = initializeApp(firebaseConfig);
@@ -628,33 +720,36 @@
 
           const authUnsubscribe = onAuthStateChanged(authInstance, async (user) => {
             if (user) {
-              setUserId(user.uid);
+              // User is signed in
+              if (user.isAnonymous) {
+                // It's a "Viewer"
+                setAuthInfo({ isEditor: false, userEmail: null });
+              } else {
+                // It's an "Editor"
+                setAuthInfo({ isEditor: true, userEmail: user.email });
+              }
               setIsAuthReady(true);
               
               // --- USER IS READY, NOW LISTEN TO MACHINES ---
               const machinesCollection = collection(dbInstance, "machines");
               
-              // onSnapshot listens for *any* changes to the 'machines' collection
               unsubscribe = onSnapshot(machinesCollection, async (querySnapshot) => {
                 if (querySnapshot.empty) {
-                  // Database is empty, populate it ONCE
                   console.log("No machines found. Initializing database...");
                   for (const machine of INITIAL_MACHINES) {
-                    // Use machine.id as the document ID
                     const machineRef = doc(dbInstance, "machines", String(machine.id));
                     await setDoc(machineRef, machine);
                   }
                 } else {
-                  // Database has data, update our React state
                   const machinesFromDb = querySnapshot.docs.map(doc => doc.data());
-                  machinesFromDb.sort((a, b) => a.id - b.id); // Ensure correct order
+                  machinesFromDb.sort((a, b) => a.id - b.id); 
                   setMachines(machinesFromDb);
                 }
               });
               // ---------------------------------------------
               
             } else {
-              // No user, sign in anonymously (for production)
+              // No user at all, sign in anonymously (for "Viewer" mode)
               console.log("No user, signing in anonymously.");
               signInAnonymously(authInstance).catch((authError) => {
                 console.error("Error signing in anonymously:", authError);
@@ -663,14 +758,22 @@
           });
           
           return () => {
-            authUnsubscribe(); // Cleanup auth listener
-            unsubscribe(); // Cleanup snapshot listener
+            authUnsubscribe(); 
+            unsubscribe(); 
           };
           
         } catch (e) {
           console.error("Error initializing Firebase:", e);
         }
-      }, []); // Only run once on mount
+      }, []); 
+      
+      // --- Logout Function ---
+      const handleLogout = () => {
+        if (auth) {
+          signOut(auth).catch(err => console.error("Sign out error", err));
+          // onAuthStateChanged will handle the rest, signing user in anonymously
+        }
+      };
 
       // --- Search Functions (remain in App component) ---
       
@@ -700,7 +803,6 @@
           console.error("Error searching database:", e);
           setSearchError("An error occurred during the search. Please check console.");
           
-          // Check for index error
           if (e.code === 'failed-precondition') {
              setSearchError(
               <span>
@@ -755,58 +857,99 @@
       
       // --- Main App Render ---
       return (
-        <div className="min-h-screen bg-gray-900 text-gray-100 p-4 sm:p-8">
-          <header className="text-center my-8">
-            <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-green-400">
-              Harwell Vacuum Chambers
-            </h1>
-            <div className="mt-6">
-              <button 
-                onClick={handleOpenSearchModal} 
-                className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-all" 
-                disabled={!isAuthReady || machines.length === 0}
-              >
-                {(!isAuthReady || machines.length === 0) ? "Connecting to Database..." : "Search Completed Jobs"}
-              </button>
-            </div>
-          </header>
-          <main>
-            {machines.length === 0 ? (
-              <div className="text-center text-gray-400 text-xl p-8">
-                Loading machine data from database...
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
-                {machines.map((machine) => (
-                  <MachineCard
-                    key={machine.id}
-                    machine={machine}
-                    db={db} // Pass the database instance to each card
-                  />
-                ))}
-              </div>
-            )}
-          </main>
+        // Provide the auth context to all child components
+        <AuthContext.Provider value={authInfo}>
+          <div className="min-h-screen bg-gray-900 text-gray-100 p-4 sm:p-8">
+            <header className="max-w-7xl mx-auto text-center my-8">
+              <div className="flex justify-between items-center mb-6">
+                {/* Login/Logout Button */}
+                {isAuthReady ? (
+                  authInfo.isEditor ? (
+                    <div className="text-left">
+                      <p className="text-sm text-green-400">Logged in as:</p>
+                      <p className="text-xs text-gray-300 font-medium">{authInfo.userEmail}</p>
+                      <button 
+                        onClick={handleLogout}
+                        className="mt-1 text-xs text-red-400 hover:text-red-300"
+                      >
+                        (Logout)
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setLoginModalOpen(true)}
+                      className="px-4 py-2 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-600 transition-all"
+                    >
+                      Editor Login
+                    </button>
+                  )
+                ) : (
+                  <div className="px-4 py-2 bg-gray-700 text-white font-semibold rounded-lg opacity-50">
+                    ...
+                  </div>
+                )}
 
-          {/* Search/Report Modals are rendered here, controlled by App state */}
-          {(reportToView) && (
-             <ReportModal 
-              reportData={reportToView} 
-              onClose={() => setReportToView(null)} 
-            />
-          )}
-          
-          {searchModalOpen && (
-            <SearchModal 
-              onClose={() => { setSearchModalOpen(false); setSearchResults([]); setSearchError(null); }} 
-              onSearch={handleSearch} 
-              onViewReport={handleViewReport} 
-              results={searchResults} 
-              isSearching={isSearching} 
-              error={searchError} 
-            />
-          )}
-        </div>
+                <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-green-400 text-center flex-grow">
+                  Harwell Vacuum Chambers
+                </h1>
+
+                {/* Search Button */}
+                <button 
+                  onClick={handleOpenSearchModal} 
+                  className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-all" 
+                  disabled={!isAuthReady || machines.length === 0}
+                >
+                  {(!isAuthReady || machines.length === 0) ? "Connecting..." : "Search Jobs"}
+                </button>
+              </div>
+            </header>
+            
+            <main>
+              {machines.length === 0 ? (
+                <div className="text-center text-gray-400 text-xl p-8">
+                  Loading machine data from database...
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
+                  {machines.map((machine) => (
+                    <MachineCard
+                      key={machine.id}
+                      machine={machine}
+                      db={db} 
+                    />
+                  ))}
+                </div>
+              )}
+            </main>
+
+            {/* Search/Report Modals are rendered here, controlled by App state */}
+            {(reportToView) && (
+               <ReportModal 
+                reportData={reportToView} 
+                onClose={() => setReportToView(null)} 
+              />
+            )}
+            
+            {searchModalOpen && (
+              <SearchModal 
+                onClose={() => { setSearchModalOpen(false); setSearchResults([]); setSearchError(null); }} 
+                onSearch={handleSearch} 
+                onViewReport={handleViewReport} 
+                results={searchResults} 
+                isSearching={isSearching} 
+                error={searchError} 
+              />
+            )}
+            
+            {/* Login Modal */}
+            {loginModalOpen && (
+              <LoginModal 
+                auth={auth}
+                onClose={() => setLoginModalOpen(false)}
+              />
+            )}
+          </div>
+        </AuthContext.Provider>
       );
     }
 
