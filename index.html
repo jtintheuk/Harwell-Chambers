@@ -36,8 +36,8 @@
       getAuth, 
       signInAnonymously, 
       onAuthStateChanged,
-      signInWithEmailAndPassword, // Added for Editor login
-      signOut // Added for logout
+      signInWithEmailAndPassword, 
+      signOut 
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import { 
       getFirestore, 
@@ -56,7 +56,6 @@
     const { useState, useEffect, createContext, useContext } = React;
 
     // --- Auth Context ---
-    // We create a simple "Context" to let all components know if the user is an Editor.
     const AuthContext = createContext({ 
       isEditor: false, 
       userEmail: null 
@@ -164,14 +163,27 @@
       const [wrNumber, setWrNumber] = useState("");
       const [jobName, setJobName] = useState("");
       const [crateCount, setCrateCount] = useState(0);
+      const [error, setError] = useState(null); // --- NEW: Error state
 
       const handleSubmit = (e) => {
         e.preventDefault();
-        if (crateCount < 0) return;
+        setError(null); // --- NEW: Clear previous errors
+        
+        // --- NEW: Add validation to ensure fields are not empty ---
+        if (wrNumber.trim() === "" || jobName.trim() === "") {
+          setError("WR Number and Job Name are required.");
+          return;
+        }
+        
+        if (crateCount < 0) {
+          setError("Crates cannot be a negative number.");
+          return;
+        }
+        
         onSubmit({
           jobId: Date.now(),
-          wrNumber: wrNumber || "N/A",
-          jobName: jobName || "N/A",
+          wrNumber: wrNumber.trim(), // Use trimmed value
+          jobName: jobName.trim(),   // Use trimmed value
           crateCount: crateCount,
         });
       };
@@ -180,18 +192,19 @@
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
           <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full text-gray-900">
             <h3 className="text-2xl font-bold text-center mb-6">Add Job</h3>
+            {error && <p className="text-red-500 text-center mb-4">{error}</p>} 
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">WR Number</label>
-                <input type="text" value={wrNumber} onChange={(e) => setWrNumber(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., WR-7890" required />
+                <input type="text" value={wrNumber} onChange={(e) => setWrNumber(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., WR-7890" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Job Name</label>
-                <input type="text" value={jobName} onChange={(e) => setJobName(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., Main Assembly" required />
+                <input type="text" value={jobName} onChange={(e) => setJobName(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., Main Assembly" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number of Crates</label>
-                <input type="number" min="0" value={crateCount} onChange={(e) => setCrateCount(parseInt(e.target.value, 10) || 0)} className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+                <input type="number" min="0" value={crateCount} onChange={(e) => setCrateCount(parseInt(e.target.value, 10) || 0)} className="w-full p-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
             <div className="flex justify-around mt-8">
@@ -356,7 +369,6 @@
       );
     }
     
-    // --- NEW LOGIN MODAL ---
     function LoginModal({ auth, onClose }) {
       const [email, setEmail] = useState("");
       const [password, setPassword] = useState("");
@@ -436,7 +448,7 @@
     }
 
     function MachineCard({ machine, db }) {
-      const { isEditor } = useContext(AuthContext); // Get editor status from context
+      const { isEditor } = useContext(AuthContext); 
       
       const [confirmModalData, setConfirmModalData] = useState({ machineId: null, jobId: null });
       const [downtimeModalMachineId, setDowntimeModalMachineId] = useState(null);
@@ -705,7 +717,7 @@
       const [searchError, setSearchError] = useState(null);
       const [reportToView, setReportToView] = useState(null);
       
-      const [loginModalOpen, setLoginModalOpen] = useState(false); // New state for login modal
+      const [loginModalOpen, setLoginModalOpen] = useState(false); 
 
       // --- Firebase Initialization and Real-time Listener ---
       useEffect(() => {
@@ -735,10 +747,13 @@
               
               unsubscribe = onSnapshot(machinesCollection, async (querySnapshot) => {
                 if (querySnapshot.empty) {
-                  console.log("No machines found. Initializing database...");
-                  for (const machine of INITIAL_MACHINES) {
-                    const machineRef = doc(dbInstance, "machines", String(machine.id));
-                    await setDoc(machineRef, machine);
+                  // Only allow writes if user is an Editor
+                  if (!user.isAnonymous) {
+                    console.log("No machines found. Initializing database...");
+                    for (const machine of INITIAL_MACHINES) {
+                      const machineRef = doc(dbInstance, "machines", String(machine.id));
+                      await setDoc(machineRef, machine);
+                    }
                   }
                 } else {
                   const machinesFromDb = querySnapshot.docs.map(doc => doc.data());
