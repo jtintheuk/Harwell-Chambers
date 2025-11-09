@@ -113,6 +113,7 @@
     }
 
     // --- Firebase Config ---
+    // This is your production config.
     const firebaseConfig = {
       apiKey: "AIzaSyA7soD0H7TRwuAn8R6S9MHodE6VPGpRhFI",
       authDomain: "harwell-chamber-monitoring.firebaseapp.com",
@@ -163,13 +164,13 @@
       const [wrNumber, setWrNumber] = useState("");
       const [jobName, setJobName] = useState("");
       const [crateCount, setCrateCount] = useState(0);
-      const [error, setError] = useState(null); // --- NEW: Error state
+      const [error, setError] = useState(null); 
 
       const handleSubmit = (e) => {
         e.preventDefault();
-        setError(null); // --- NEW: Clear previous errors
+        setError(null); 
         
-        // --- NEW: Add validation to ensure fields are not empty ---
+        // Validation fix
         if (wrNumber.trim() === "" || jobName.trim() === "") {
           setError("WR Number and Job Name are required.");
           return;
@@ -182,8 +183,8 @@
         
         onSubmit({
           jobId: Date.now(),
-          wrNumber: wrNumber.trim(), // Use trimmed value
-          jobName: jobName.trim(),   // Use trimmed value
+          wrNumber: wrNumber.trim(), 
+          jobName: jobName.trim(),   
           crateCount: crateCount,
         });
       };
@@ -549,7 +550,9 @@
             
             if (db) {
               try {
-                await addDoc(collection(db, "completedJobs"), report);
+                // THIS IS THE FIX. Removed the broken `isPreview` logic.
+                const collectionPath = `completedJobs`;
+                await addDoc(collection(db, collectionPath), report);
                 console.log("Report saved to database.");
               } catch (e) {
                 console.error("Error saving report to database:", e);
@@ -807,6 +810,7 @@
         setSearchError(null);
         setSearchResults([]);
         try {
+          // THIS IS THE FIX. Removed the broken `isPreview` logic.
           const collectionPath = `completedJobs`;
           const q = query(collection(db, collectionPath), where(searchType, "==", searchValue));
           const querySnapshot = await getDocs(q);
@@ -838,6 +842,7 @@
         setSearchError(null);
         setSearchResults([]);
         try {
+          // THIS IS THE FIX. Removed the broken `isPreview` logic.
           const collectionPath = `completedJobs`;
           const querySnapshot = await getDocs(collection(db, collectionPath));
           const results = [];
